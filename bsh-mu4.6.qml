@@ -1,13 +1,11 @@
-// Barbershop Harmonizer — MuseScore 3.x and MuseScore 4.x ≤ 4.5.
-//
-// (For MuseScore 4.6+, use bsh-mu4.6.qml — same logic, themed UI components.)
+// Barbershop Harmonizer — MuseScore 4.4+ TTBB-aware fork.
 //
 // Builds barbershop voicings around a clicked anchor note. Supports two layouts:
 //   * Single-staff: all four voices stacked into one chord on the lead's track.
 //   * Split-staff (TTBB): tenor/lead share the top staff (voices 1/2, stems
 //     up/down); bari/bass share the staff below (voices 1/2, stems up/down).
 //
-// Key features:
+// Key features beyond the original bsh.qml:
 //   * Sustained-lead anchoring — click any voice on a beat and the chord/voicing
 //     UI is built around whichever voice-2 (or voice-1 fallback) is sounding the
 //     lead pitch at that tick, even if it started in an earlier measure.
@@ -16,28 +14,21 @@
 //   * Robust placement on empty voices, sustained-rest splits, and verification
 //     after every cursor write.
 
-import QtQuick 2.9
-import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.4
-import MuseScore 3.0
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import MuseScore
+import Muse.UiComponents
+import Muse.Ui
 
 MuseScore {
-    menuPath: "Plugins.Barbershop Harmonizer"
-    description: "Plugin to help harmonizing a melody in Barbershop style"
+    title: "Barbershop Harmonizer"
     version: "1.1"
-    pluginType: "dock"
-    dockArea: "right"
+    categoryCode: "composing-arranging-tools"
+    description: "Plugin to help harmonizing a melody in Barbershop style"
+    pluginType: "dialog"
     width: 370
     height: 500
-    visible: true
-
-    Component.onCompleted: {
-        if (mscoreMajorVersion >= 4) {
-            title = "Barbershop Harmonizer";
-            categoryCode = "composing-arranging-tools";
-            pluginType = "dialog";
-        }
-    }
 
     onRun: {
         main_cursor = curScore.newCursor();
@@ -81,11 +72,11 @@ MuseScore {
         height: parent.height - 20
         anchors.centerIn: parent
 
-        Text {
+        StyledTextLabel {
             text: "Tonality : <b>" + get_note_name(tonality) + " major</b> (using " + (use_flats ? 'flats' : 'sharps') + ')'
         }
 
-        Text {
+        StyledTextLabel {
             text: qsTr("Select root :")
         }
 
@@ -122,7 +113,7 @@ MuseScore {
                 radius: 4
                 enabled: interaction_enabled
 
-                Text {
+                StyledTextLabel {
                     anchors.centerIn: parent
                     text: {
                         if (name != '')
@@ -131,7 +122,7 @@ MuseScore {
                         else
                             get_note_name(tonality + offset)
                     }
-                    color: enabled ? "black" : "gray"
+                    color: enabled ? ui.theme.fontPrimaryColor : "gray"
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -139,12 +130,12 @@ MuseScore {
                 }
             }
             highlight: Rectangle {
-                color: "lightsteelblue"
+                color: ui.theme.accentColor
                 radius: 4
             }
         }
 
-        Text {
+        StyledTextLabel {
             text: "Select chord :"
         }
 
@@ -166,13 +157,13 @@ MuseScore {
                 radius: 4
                 enabled: interaction_enabled
 
-                Text {
+                StyledTextLabel {
                     anchors.centerIn: parent
                     text: get_note_name(root) + notation
 
                     color: (Object.keys(offsets).some(function (k) {
                         return (offsets[k] + root) % 12 === lead_note % 12;
-                    })) && enabled ? "black" : "gray"
+                    })) && enabled ? ui.theme.fontPrimaryColor : "gray"
                 }
 
                 MouseArea {
@@ -181,12 +172,12 @@ MuseScore {
                 }
             }
             highlight: Rectangle {
-                color: "lightsteelblue"
+                color: ui.theme.accentColor
                 radius: 4
             }
         }
 
-        Text {
+        StyledTextLabel {
             text: "Choose voicing :"
         }
 
@@ -265,10 +256,10 @@ MuseScore {
                          && ((root + chord.offsets[voicing_gv.model.get(index).notes[2]]) % 12 == lead_note % 12)
                          && interaction_enabled
 
-                Text {
+                StyledTextLabel {
                     anchors.centerIn: parent
                     text: notes[3] + '<br><b>' + notes[2] + '</b><br>' + notes[1] + '<br>' + notes[0]
-                    color: enabled ? "black" : "gray"
+                    color: enabled ? ui.theme.fontPrimaryColor : "gray"
                 }
 
                 MouseArea {
@@ -290,28 +281,28 @@ MuseScore {
                 }
             }
             highlight: Rectangle {
-                color: "lightsteelblue"
+                color: ui.theme.accentColor
                 radius: 4
             }
         }
 
         RowLayout {
             ColumnLayout {
-                Text {
+                StyledTextLabel {
                     id: status_bar
                     Layout.fillHeight: true
                     verticalAlignment: Text.AlignBottom
                     horizontalAlignment: Text.AlignLeft
                 }
 
-                Text {
+                StyledTextLabel {
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignLeft
                     text: {
                         var str = '';
                         if (typeof chord !== 'undefined') {
                             str = get_note_name(root) + chord.notation + " (" + chord.name + ")"
-                                    + '<br>Current note : <font color="' + "lightsteelblue" + '">'
+                                    + '<br>Current note : <font color="' + ui.theme.accentColor + '">'
                                     + get_note_name(lead_note) + '</font>';
                             var interval = (lead_note + 12 - root) % 12;
                             if (interval > 0) {
@@ -343,57 +334,34 @@ MuseScore {
                     onClicked: checked = !checked
                 }
 
-                Button {
-                    Layout.fillWidth: true
-                    iconName: "help-about"
-                    text: "Help"
-                    onClicked: popup.visible = true
+                FlatButton {
+                    icon: IconCode.INFO
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: 10
+                    onClicked: popup.open()
+
+                    StyledDialogView {
+                        id: popup
+                        width: 250
+                        height: 350
+                        margins : 10
+                        contentWidth: 250
+
+                        StyledTextLabel {
+                            id: popupText
+                            anchors.fill : parent
+                            anchors.centerIn: parent
+
+                            text:  "<h3>BarberShop Harmonizer</h3><br><br><p>Tonality is determined automatically from the key signature.</p><p>Select the lead note you want to harmonize.<br/>Select the root of the chord, then select the chord type.<br/>Click on the desired voicing to apply the change to the accompanying notes (Tenor, Baritone, and Bass).<br/>Right-click on the desired voicing to have a lower Baritone/bass pair (ie. to ensure that the Baritone is below the Lead).</p><p><b>Split staff (TTBB):</b> when checked, Tenor goes on the lead's staff (voice 1, stem up), Lead stays on its voice (stem down), Bari and Bass go on the staff below (voices 1 and 2, stems up/down).</p>"
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignLeft
+                        }
+                    }
                 }
             }
         } // RowLayout
     } // ColumnLayout
-
-    // ============= Information Popup =============
-    Rectangle {
-        id: popup
-        anchors.fill: parent
-        color: "#77000000"
-        visible: false
-        z: 100
-
-        property int popup_width: width - 40
-        property int popup_height: height - 80
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: popup.visible = false
-        }
-
-        Rectangle {
-            anchors.centerIn: parent
-            width: popup.popup_width
-            height: popup.popup_height
-            color: "white"
-            border.color: "black"
-            radius: 4
-
-            Text {
-                anchors.fill: parent
-                anchors.margins: 10
-                wrapMode: Text.WordWrap
-                horizontalAlignment: Text.AlignLeft
-                verticalAlignment: Text.AlignTop
-                text: "<h3>Barbershop Harmonizer</h3>"
-                    + "<p>Tonality is determined automatically from the key signature.</p>"
-                    + "<p>Select the lead note you want to harmonize. Select the root of the chord, then select the chord type. "
-                    + "Click on the desired voicing to apply the change to the accompanying notes (Tenor, Baritone, and Bass). "
-                    + "Right-click on the desired voicing to have a lower Baritone/bass pair (ie. to ensure that the Baritone is below the Lead).</p>"
-                    + "<p><b>Split staff (TTBB):</b> when checked, Tenor goes on the lead's staff (voice 1, stem up), Lead stays on its voice (stem down), "
-                    + "Bari and Bass go on the staff below (voices 1 and 2, stems up/down).</p>"
-                    + "<p><i>Click anywhere outside this box to close.</i></p>"
-            }
-        }
-    }
 
     // =========== Chords =================
     property ListModel chords_model: ListModel {
