@@ -263,8 +263,9 @@ MuseScore {
                 radius: 4
 
                 enabled: (typeof chord !== 'undefined')
-                         && ((root + chord.offsets[voicing_gv.model.get(index).notes[2]]) % 12 == lead_note % 12)
                          && interaction_enabled
+                         && (out_of_style_cb.checked
+                             || (root + chord.offsets[voicing_gv.model.get(index).notes[2]]) % 12 == lead_note % 12)
 
                 StyledTextLabel {
                     anchors.centerIn: parent
@@ -341,6 +342,12 @@ MuseScore {
                     id: split_staff_cb
                     text: "Split staff (TTBB)"
                     checked: true
+                    onClicked: checked = !checked
+                }
+
+                CheckBox {
+                    id: out_of_style_cb
+                    text: "Allow out-of-style voicings"
                     onClicked: checked = !checked
                 }
 
