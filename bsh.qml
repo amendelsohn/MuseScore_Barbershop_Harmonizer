@@ -34,39 +34,15 @@ MuseScore {
         main_cursor.rewind(Cursor.SCORE_START);
 
         selection_changed();
-
-//      dbg(this);
     }
 
     onScoreStateChanged: function (state) {
-        if (parent === null) {
-            // Plugin creator bug : signal still connected even after stopping the plugin
-            return;
-        }
-
-        //console.log("~~~~~ onScoreStateChanged ~~~~~");
-        if (inCmd) // prevent recursion from own changes
-            return;
-        if (state.undoRedo) // try not to interfere with undo/redo commands
-            return;
-
-//      console.log("selectionChanged   : ", state.selectionChanged   );
-//      console.log("excerptsChanged    : ", state.excerptsChanged    );
-//      console.log("instrumentsChanged : ", state.instrumentsChanged );
-//      console.log("startLayoutTick    : ", state.startLayoutTick    );
-//      console.log("endLayoutTick      : ", state.endLayoutTick      );
-
-        if (state.selectionChanged) {
-            selection_changed();
-        }
+        // Plugin creator bug: this signal stays connected after the plugin stops.
+        if (parent === null) return;
+        if (inCmd) return;        // prevent recursion from own changes
+        if (state.undoRedo) return;  // try not to interfere with undo/redo
+        if (state.selectionChanged) selection_changed();
     }
-
-
-    //    TODO: essayer d'intercepter la fermeture du panneau
-//    onWidthChanged: {
-//        console.log("closed");
-//        (typeof(quit) === 'undefined' ? Qt.quit : quit)()
-//    }
 
     property bool inCmd: false
     property var main_cursor: undefined
@@ -197,7 +173,6 @@ MuseScore {
         GridView {
             id: voicing_gv
             Layout.fillWidth: true
-//          Layout.preferredHeight: cellHeight * Math.ceil(count / (Math.floor(parent.width / cellWidth)))
             Layout.minimumHeight: cellHeight
             cellWidth: 25
             cellHeight: 70
@@ -277,6 +252,10 @@ MuseScore {
                     }
                     onExited: status_bar.text = ''
                 }
+            }
+            highlight: Rectangle {
+                color: "lightsteelblue"
+                radius: 4
             }
         }
 
@@ -641,86 +620,48 @@ MuseScore {
 
     function selection_changed() {
         interaction_enabled = false;
-        console.log(curScore.selection.elements.length, "element(s) selected");
 
-        if (curScore.selection.elements.length == 1) {
-            var el = curScore.selection.elements[0];
+        if (curScore.selection.elements.length !== 1) return;
+        var el = curScore.selection.elements[0];
+        if (el.type !== Element.NOTE || el.track !== 1) return;
 
-            if ((el.type == Element.NOTE) && (el.track == 1)) {
-//              console.log("It's a note !", get_note_name(el.pitch));
-//              console.log("> Element : ", el);
-//              console.log("> Parent : ", el.parent);
-//              console.log("> Grand-parent : ", el.parent.parent);
-//              console.log("> Tick : ", el.parent.parent.tick);
-//              console.log("note track :", el.track);
-
-                interaction_enabled = true;
-                lead_note = el.pitch;
-                main_cursor.rewindToTick(el.parent.parent.tick);
-                current_keysig = main_cursor.keySignature;
-            }
-        }
+        interaction_enabled = true;
+        lead_note = el.pitch;
+        main_cursor.rewindToTick(el.parent.parent.tick);
+        current_keysig = main_cursor.keySignature;
     }
 
     function voicing_selected(index, spread) {
-        console.log(spread ? 'spread' : 'closed', 'voicing');
-//        for (var k in chord.offsets) {
-//            console.log(k, get_note_name(root + chord.offsets[k]));
-//        }
-//        console.log('---');
-
         var voicing = voicing_gv.model.get(index);
 
-//        voicing.notes.split('').forEach(function(note){
-//            console.log('note', note, get_note_name(root + chord.offsets[note]));
-//        });
-
         var tenor_note = root + chord.offsets[voicing.notes[3]];
-        while (tenor_note <= lead_note) { tenor_note += 12; }
+        while (tenor_note <= lead_note) tenor_note += 12;
 
         var bari_note = root + chord.offsets[voicing.notes[1]];
-        while (bari_note < lead_note) { bari_note += 12; }
-        if (bari_note >= tenor_note) { bari_note -= 12; }
-        if (spread) { bari_note -= 12; }
+        while (bari_note < lead_note) bari_note += 12;
+        if (bari_note >= tenor_note) bari_note -= 12;
+        if (spread) bari_note -= 12;
 
         var bass_note = root + chord.offsets[voicing.notes[0]];
-        while ((bass_note < bari_note) && (bass_note < lead_note)) { bass_note += 12; }
+        while (bass_note < bari_note && bass_note < lead_note) bass_note += 12;
         bass_note -= 12;
 
-        console.log('Tenor : ', tenor_note, get_note_name(tenor_note));
-        console.log('Lead  : ', lead_note, get_note_name(lead_note));
-        console.log('Bari  : ', bari_note, get_note_name(bari_note));
-        console.log('Bass  : ', bass_note, get_note_name(bass_note));
-
-        // ============ Score operation ===============
         ensureCmdStarted();
 
-        console.log('currently at tick', main_cursor.tick);
-
-        // Effective note change
         change_pitch(0, tenor_note);
         change_pitch(4, bari_note);
         change_pitch(5, bass_note);
 
-        // Add harmony
         var harmony = get_segment_harmony(main_cursor.segment);
         var chord_name = get_note_name(root) + chord.notation;
-        print(harmony);
-        print(chord_name);
 
         if (harmony) {
-            // if chord symbol exists, replace it
             harmony.text = chord_name;
         } else if (add_harmony_cb.checked) {
-            // chord symbol does not exist, create it
             harmony = newElement(Element.HARMONY);
             harmony.text = chord_name;
             main_cursor.add(harmony);
         }
-
-     // if (prev_chordName == chord_name) {// && isEqual(prev_full_chord, full_chord)){ //same chord as previous one ... remove text symbol
-     //     harmony.text = '';
-     // }
 
         ensureCmdEnded();
     }
@@ -730,16 +671,12 @@ MuseScore {
         main_cursor.track = track;
         var elem = main_cursor.element;
 
-        if (elem && (elem.type == Element.CHORD)) {
+        if (elem && elem.type == Element.CHORD) {
             var cur_note = elem.notes[0].firstTiedNote;
-
-            //console.log('change :', cur_note.pitch, '->', pitch);
             cur_note.pitch = pitch;
             cur_note.tpc1 = get_tpc(pitch);
             cur_note.tpc2 = cur_note.tpc1;
-
             while (cur_note.tieForward != null) {
-                //console.log('tied note !');
                 cur_note = cur_note.tieForward.endNote;
                 cur_note.pitch = pitch;
                 cur_note.tpc1 = get_tpc(pitch);
@@ -752,8 +689,6 @@ MuseScore {
 
     // Copied from ChordIdentifierSp3_2
     function get_segment_harmony(segment) {
-        //if (segment.segmentType != Segment.ChordRest)
-        //    return null;
         var aCount = 0;
         var annotation = segment.annotations[aCount];
         while (annotation) {
@@ -765,169 +700,4 @@ MuseScore {
         return null;
     }
 
-
-    // =========================================================================================================
-    function dbg(element) {
-//        console.log(Object.keys(element));
-        console.log('==============================================');
-        console.log("typeof(element) :", typeof(element));
-        for (var p in element) {
-            if (typeof element[p] !== 'undefined') {
-                console.log(p, '\t', typeof(element[p]), '\t', element[p]);
-            }
-        }
-        console.log('==============================================');
-    }
-
-    function add_notes() {
-        ensureCmdStarted();
-
-        var cursor = curScore.newCursor();
-        var notes = [];
-        var i_notes = 0;
-
-        // ===== Copie silences ====
-//      cursor.filter = Segment.TimeSig;
-//      cursor.staffIdx = 0;    // Portée 1
-//      cursor.voice = 0;       // Voix 1 !!!
-//      cursor.rewind(Cursor.SCORE_START);
-//      console.log('filter : ', cursor.filter);
-
-//        var ks = cursor.keySignature;
-//        console.log(ks);
-
-//      while (cursor.segment) {
-//          var e = cursor.element;
-//          if (e) {
-//              if (e.type == Element.TIMESIG) {
-//                  console.log(e);
-//                  console.log(e.timesig);
-//                  console.log('current time sig :', e.timesig.numerator, e.timesig.denominator);
-//              }
-//          }
-//          cursor.next();
-//      }
-
-        // Copie silences
-//      cursor.filter = Segment.ChordRest;
-//      cursor.track = 0;
-//      cursor.rewind(Cursor.SCORE_START);
-//
-//      while (cursor.segment) {
-//          var e = cursor.element;
-//          if (e) {
-//              if ((e.type == Element.CHORD) || (e.type == Element.REST)) {
-//                  console.log(cursor.tick);
-//                  console.log(e.duration.numerator, e.duration.denominator);
-//                  cursor.track = 5;
-//                  var rest = newElement(Element.REST);
-//                  rest.duration = e.duration;
-//                  console.log(rest.duration.numerator, rest.duration.denominator);
-//                  cursor.add(rest);
-//                  cursor.track = 0;
-//              }
-//          }
-//          cursor.next();
-//      }
-//      ensureCmdEnded();
-//      return;
-
-        // ====== Lecture notes et silences =======
-        cursor.filter = Segment.ChordRest;
-        cursor.rewind(Cursor.SCORE_START);
-        cursor.staffIdx = 0;    // Portée 1
-        cursor.voice = 1;       // Voix 2
-
-        console.log('filter : ', cursor.filter);
-
-        while (cursor.segment) {
-            var e = cursor.element;
-            //console.log("tick : ", cursor.tick);
-
-            if (e) {
-                //console.log("type:", e.name, "at  tick:", e.tick, "color", e.color);
-                //dbg(e);
-
-                if (e.type == Element.CHORD) {
-                    //console.log("Chord : duration ", e.duration.ticks)
-
-                    notes[i_notes] = ['note', e.duration];
-                    i_notes++;
-
-                    //for (var i = 0; i < e.notes.length; i++) {
-                    //    console.log("Note : pitch ", e.notes[i].pitch)
-                    //}
-                 // cursor.setDuration(e.duration.numerator, e.duration.denominator);
-                 //
-                 // cursor.track = 0; cursor.addNote(72);
-                 // cursor.track = 4; cursor.addNote(52);
-                 // cursor.track = 5; cursor.addNote(48);
-                 // cursor.track = 1;
-                } else if (e.type == Element.REST) {
-                    //var d = e.duration;
-                    //console.log("   duration ", d.ticks);
-                    //console.log("   duration " + d.numerator + "/" + d.denominator);
-
-                    //dbg(e);
-
-                    //notes[i_notes] = ['rest', e.duration];
-                    notes[i_notes] = ['rest', e];
-                    i_notes++;
-
-                //  cursor.track = 0; cursor.add(e.clone());
-                //  cursor.track = 4; cursor.add(e.clone());
-                //  cursor.track = 5; cursor.add(e.clone());
-                //  cursor.track = 1;
-                }
-            }
-            cursor.next();
-        }
-        console.log(notes);
-
-        [0, 4, 5].forEach(function(track) {
-            console.log("track : ", track);
-
-            cursor.track = track;
-            cursor.rewind(Cursor.SCORE_START);
-
-            notes.forEach(function(note){
-                console.log(cursor.tick, note[0]);
-
-                if (note[0] == 'note') {
-                    cursor.setDuration(note[1].numerator, note[1].denominator);
-                    cursor.addNote({0: 72, 4: 52, 5: 48}[track]);
-                } else {
-                    //var rest = newElement(Element.REST);
-                    //rest.duration = note[1];
-                    var rest = note[1].clone();
-                    cursor.add(rest);
-//                    cursor.setDuration(note[1].numerator, note[1].denominator);
-//                    cursor.addNote(36);
-                }
-                cursor.next();
-            });
-        });
-
-        /*
-        cursor.rewind(Cursor.SCORE_START);
-        cursor.setDuration(1, 4);
-        cursor.track = 1;
-        cursor.nextMeasure();
-        console.log(cursor.staffIdx, cursor.voice, cursor.track, cursor.tick);
-        cursor.addNote(38);
-
-        cursor.staffIdx = 1;
-        cursor.voice = 1;
-        console.log(cursor.staffIdx, cursor.voice, cursor.track, cursor.tick);
-
-        var rest = newElement(Element.REST);
-        rest.duration = fraction(1, 4);
-        cursor.add(rest);
-        console.log(cursor.staffIdx, cursor.voice, cursor.track, cursor.tick);
-        cursor.next();
-        console.log(cursor.staffIdx, cursor.voice, cursor.track, cursor.tick);
-        */
-
-        ensureCmdEnded();
-    }
 }
