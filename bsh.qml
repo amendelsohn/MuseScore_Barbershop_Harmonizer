@@ -355,7 +355,9 @@ MuseScore {
 
                 CheckBox {
                     id: out_of_style_cb
-                    text: "Allow out-of-style voicings"
+                    text: checked
+                        ? 'Allow <font color="gold">out-of-style</font> voicings'
+                        : 'Allow out-of-style voicings'
                 }
 
                 Button {
