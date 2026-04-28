@@ -262,15 +262,24 @@ MuseScore {
                 border.width: 1
                 radius: 4
 
+                // True when the voicing's lead-position function lines up with
+                // the actual lead pitch — i.e. picking it would keep the user
+                // in barbershop style.
+                property bool is_in_style: (typeof chord !== 'undefined')
+                    && (root + chord.offsets[notes[2]]) % 12 == lead_note % 12
+
                 enabled: (typeof chord !== 'undefined')
                          && interaction_enabled
-                         && (out_of_style_cb.checked
-                             || (root + chord.offsets[voicing_gv.model.get(index).notes[2]]) % 12 == lead_note % 12)
+                         && (is_in_style || out_of_style_cb.checked)
 
                 StyledTextLabel {
                     anchors.centerIn: parent
                     text: notes[3] + '<br><b>' + notes[2] + '</b><br>' + notes[1] + '<br>' + notes[0]
-                    color: enabled ? ui.theme.fontPrimaryColor : "gray"
+                    // In-style voicings render in the primary color; out-of-style
+                    // voicings are yellow when the override is on, gray otherwise.
+                    color: !enabled ? "gray"
+                         : is_in_style ? ui.theme.fontPrimaryColor
+                         : "gold"
                 }
 
                 MouseArea {
