@@ -195,13 +195,23 @@ MuseScore {
             property string pending_voicing: ""
             onModelChanged: apply_pending_voicing()
             function apply_pending_voicing() {
-                if (!pending_voicing || !model || !model.count) return;
+                if (!pending_voicing || !model || !model.count) {
+                    console.log("apply_pending_voicing: skip pending='" + pending_voicing
+                                + "' model=" + (model ? "ok" : "null")
+                                + " count=" + (model ? model.count : 0));
+                    return;
+                }
                 for (var j = 0; j < model.count; j++) {
-                    if (model.get(j).notes === pending_voicing) {
+                    var entry = model.get(j).notes;
+                    if (entry === pending_voicing) {
+                        console.log("apply_pending_voicing: matched '" + pending_voicing
+                                    + "' at index " + j);
                         currentIndex = j;
                         return;
                     }
                 }
+                console.log("apply_pending_voicing: NO MATCH for '" + pending_voicing
+                            + "' across " + model.count + " entries");
             }
 
             model: {
@@ -984,8 +994,10 @@ MuseScore {
 
         // Build the voicing string "<bass><bari><lead><tenor>" from chord functions.
         var defOff = best.chord_def.offsets;
+        var keys = Object.keys(defOff);
         var fn_for = function(pc) {
-            for (var k in defOff) {
+            for (var i = 0; i < keys.length; i++) {
+                var k = keys[i];
                 if ((best.root_pc + defOff[k]) % 12 === pc) return k;
             }
             return null;
@@ -993,6 +1005,12 @@ MuseScore {
         var voicing_str = "" + (fn_for(s_pc) || "") + (fn_for(b_pc) || "")
                             + (fn_for(l_pc) || "") + (fn_for(t_pc) || "");
         if (voicing_str.length !== 4) voicing_str = null;
+
+        console.log("detect_current_chord: pcs t=" + t_pc + " l=" + l_pc
+                    + " b=" + b_pc + " s=" + s_pc
+                    + " -> root_pc=" + best.root_pc
+                    + " chord=" + best.chord_def.name
+                    + " voicing_str=" + voicing_str);
 
         return {
             root_pc: best.root_pc,
