@@ -24,7 +24,7 @@ import MuseScore 3.0
 MuseScore {
     menuPath: "Plugins.Barbershop Harmonizer"
     description: "Plugin to help harmonizing a melody in Barbershop style"
-    version: "1.1"
+    version: "1.2"
     pluginType: "dock"
     dockArea: "right"
     width: 370

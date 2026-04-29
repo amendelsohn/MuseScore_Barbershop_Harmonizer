@@ -23,7 +23,7 @@ import Muse.Ui
 
 MuseScore {
     title: "Barbershop Harmonizer"
-    version: "1.1"
+    version: "1.2"
     categoryCode: "composing-arranging-tools"
     description: "Plugin to help harmonizing a melody in Barbershop style"
     pluginType: "dialog"
