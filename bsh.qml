@@ -773,26 +773,29 @@ MuseScore {
         }
 
         // Chord symbol goes at the anchor tick (where the chord change happens),
-        // not at the start of any tie chain. The cursor was last positioned by
-        // set_voice_pitch on whichever track was written most recently — that
-        // track may not have a CR segment exactly at lead_note_tick (e.g. when
-        // the user clicked a short note in a measure where another voice is
-        // sustaining a longer note), in which case rewindToTick would roll
-        // forward to the next available segment. Force the cursor onto the
-        // user's clicked track first, since lead_note_tick comes directly from
-        // that track's segment and lands exactly.
+        // not at the start of any tie chain. Position via anchor_track since
+        // lead_note_tick comes directly from that track's segment and lands
+        // exactly — other tracks might roll forward if they have no CR segment
+        // there (e.g. a voice sustaining a longer note across the click).
         main_cursor.track  = anchor_track;
         main_cursor.filter = Segment.ChordRest;
         main_cursor.rewindToTick(lead_note_tick);
         var harmony = get_segment_harmony(main_cursor.segment);
         var chord_name = get_note_name(root) + chord.notation;
 
+        // Voice 1 of the lead's staff = top staff of the TTBB group. Pin
+        // newly added harmonies there so chord symbols always render above
+        // the top staff regardless of which voice the user clicked.
+        var top_track = Math.floor(lead_note_track / 4) * 4;
+
         if (harmony) {
             harmony.text = chord_name;
         } else if (add_harmony_cb.checked) {
+            main_cursor.track = top_track;
             harmony = newElement(Element.HARMONY);
             main_cursor.add(harmony);
-            harmony.text = chord_name;
+            harmony.text  = chord_name;
+            harmony.track = top_track;
         }
 
         ensureCmdEnded();
