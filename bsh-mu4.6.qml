@@ -441,17 +441,41 @@ MuseScore {
 
                     StyledDialogView {
                         id: popup
-                        width: 250
-                        height: 350
-                        margins : 10
-                        contentWidth: 250
+                        width: 320
+                        height: 560
+                        margins : 12
+                        contentWidth: 320
 
                         StyledTextLabel {
                             id: popupText
                             anchors.fill : parent
                             anchors.centerIn: parent
 
-                            text:  "<h3>BarberShop Harmonizer</h3><br><br><p>Tonality is determined automatically from the key signature.</p><p>Select the lead note you want to harmonize.<br/>Select the root of the chord, then select the chord type.<br/>Click on the desired voicing to apply the change to the accompanying notes (Tenor, Baritone, and Bass).<br/>Right-click on the desired voicing to have a lower Baritone/bass pair (ie. to ensure that the Baritone is below the Lead).</p><p><b>Split staff (TTBB):</b> when checked, Tenor goes on the lead's staff (voice 1, stem up), Lead stays on its voice (stem down), Bari and Bass go on the staff below (voices 1 and 2, stems up/down).</p>"
+                            text:
+                                  "<h3>Barbershop Harmonizer</h3>"
+                                + "<p>Builds barbershop voicings around a clicked anchor note in a TTBB arrangement.</p>"
+
+                                + "<p><b>Workflow</b></p>"
+                                + "<p>"
+                                + "&bull; Click a note in the score &mdash; the plugin auto-detects the existing chord and highlights the matching root, chord type, and voicing.<br/>"
+                                + "&bull; Pick a different root, chord type, or voicing to apply a new harmony at that beat.<br/>"
+                                + "&bull; <b>Left-click</b> a voicing for the closed form (Baritone above Lead).<br/>"
+                                + "&bull; <b>Right-click</b> a voicing for the spread form (Baritone below Lead)."
+                                + "</p>"
+
+                                + "<p><b>Melody part</b></p>"
+                                + "<p>The four buttons at the top pick which TTBB voice carries the melody. The selected voice&apos;s pitch at the clicked beat becomes the anchor, and voicings are positioned to keep it fixed. Defaults to <b>Lead</b>; the choice persists for the session.</p>"
+
+                                + "<p><b>Split staff (TTBB)</b></p>"
+                                + "<p>When checked: Tenor on the lead&apos;s staff (voice 1, stem up), Lead on voice 2 of that staff (stem down), Bari and Bass on the staff below (voices 1 and 2, stems up/down). When unchecked: all four voices stack into a single chord on the clicked staff.</p>"
+
+                                + "<p><b>Other options</b></p>"
+                                + "<p>"
+                                + "&bull; <b>Add chord symbols</b> &mdash; places a chord symbol above the staff at each harmonization.<br/>"
+                                + "&bull; <b>Allow <font color=\"gold\">out-of-style</font> voicings</b> &mdash; enables yellow voicings whose melody-position chord function doesn&apos;t match the anchor&apos;s pitch. Picking one will rewrite the melody&apos;s pitch to match the chord function."
+                                + "</p>"
+
+                                + "<p><i>Tonality is determined automatically from the key signature.</i></p>"
                             wrapMode: Text.WordWrap
                             horizontalAlignment: Text.AlignLeft
                         }
@@ -723,7 +747,16 @@ MuseScore {
         }
 
         // Chord symbol goes at the anchor tick (where the chord change happens),
-        // not at the start of any tie chain.
+        // not at the start of any tie chain. The cursor was last positioned by
+        // set_voice_pitch on whichever track was written most recently — that
+        // track may not have a CR segment exactly at lead_note_tick (e.g. when
+        // the user clicked a short note in a measure where another voice is
+        // sustaining a longer note), in which case rewindToTick would roll
+        // forward to the next available segment. Force the cursor onto the
+        // user's clicked track first, since lead_note_tick comes directly from
+        // that track's segment and lands exactly.
+        main_cursor.track  = anchor_track;
+        main_cursor.filter = Segment.ChordRest;
         main_cursor.rewindToTick(lead_note_tick);
         var harmony = get_segment_harmony(main_cursor.segment);
         var chord_name = get_note_name(root) + chord.notation;
