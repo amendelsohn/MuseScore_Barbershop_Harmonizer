@@ -261,14 +261,24 @@ MuseScore {
                 border.width: 1
                 radius: 4
 
+                // True when the voicing's lead-position function lines up with
+                // the actual lead pitch — i.e. picking it would keep the user
+                // in barbershop style.
+                property bool is_in_style: (typeof chord !== 'undefined')
+                    && (root + chord.offsets[notes[2]]) % 12 == lead_note % 12
+
                 enabled: (typeof chord !== 'undefined')
-                         && ((root + chord.offsets[voicing_gv.model.get(index).notes[2]]) % 12 == lead_note % 12)
                          && interaction_enabled
+                         && (is_in_style || out_of_style_cb.checked)
 
                 Text {
                     anchors.centerIn: parent
                     text: notes[3] + '<br><b>' + notes[2] + '</b><br>' + notes[1] + '<br>' + notes[0]
-                    color: enabled ? "black" : "gray"
+                    // In-style voicings render in the primary color; out-of-style
+                    // voicings are yellow when the override is on, gray otherwise.
+                    color: !enabled ? "gray"
+                         : is_in_style ? "black"
+                         : "gold"
                 }
 
                 MouseArea {
@@ -341,6 +351,13 @@ MuseScore {
                     text: "Split staff (TTBB)"
                     checked: true
                     onClicked: checked = !checked
+                }
+
+                CheckBox {
+                    id: out_of_style_cb
+                    text: checked
+                        ? 'Allow <font color="gold">out-of-style</font> voicings'
+                        : 'Allow out-of-style voicings'
                 }
 
                 Button {
