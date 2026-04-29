@@ -348,7 +348,12 @@ MuseScore {
 
                 Text {
                     anchors.centerIn: parent
-                    text: notes[3] + '<br><b>' + notes[2] + '</b><br>' + notes[1] + '<br>' + notes[0]
+                    // Bold the chord-function digit at the melody position so
+                    // the user can see which voice is the anchor.
+                    text: (melody_idx === 3 ? '<b>' + notes[3] + '</b>' : notes[3]) + '<br>'
+                        + (melody_idx === 2 ? '<b>' + notes[2] + '</b>' : notes[2]) + '<br>'
+                        + (melody_idx === 1 ? '<b>' + notes[1] + '</b>' : notes[1]) + '<br>'
+                        + (melody_idx === 0 ? '<b>' + notes[0] + '</b>' : notes[0])
                     // In-style voicings render in the primary color; out-of-style
                     // voicings are yellow when the override is on, gray otherwise.
                     color: !enabled ? "gray"
@@ -825,10 +830,10 @@ MuseScore {
     //   Bari : voice 1 of staff below   -> stem up
     //   Bass : voice 2 of staff below   -> stem down
     //
-    // The lead's pitch is preserved when melody_part === "lead" (and ties on it
-    // are kept). For other melody parts, the lead voice is rewritten in place
-    // and the chosen melody voice keeps its pitch via the in-place modify path
-    // in set_voice_pitch.
+    // The MELODY voice's pitch is preserved (its existing chord is kept, with
+    // any extras stripped and ties retained). The other three voices are
+    // rewritten to the pitches computed by compute_pitches. Which voice is
+    // the melody depends on the melody_part toggle.
     function change_pitch_split_staff(tenor_pitch, lead_pitch, bari_pitch, bass_pitch) {
         var tracks = ttbb_tracks(lead_note_track);
         var lead_staff  = tracks.lead_staff;
@@ -840,29 +845,29 @@ MuseScore {
         var lead_stem   = (lead_voice === 0) ? 1 : 2;
 
         // Duration for the harmony comes from the CLICKED element. When the user
-        // clicks tenor/bari/bass on a beat where the lead is sustaining, this
-        // makes the harmony note match the click's beat duration rather than
-        // the lead's full sustained duration.
+        // clicks any voice on a beat where the melody is sustaining, this makes
+        // the harmony note match the click's beat duration rather than the
+        // sustained note's full duration.
         var clicked_chord = lead_note_element.parent;
         var clicked_dur   = clicked_chord.duration;
         var durNum        = clicked_dur.numerator;
         var durDen        = clicked_dur.denominator;
 
-        // Locate the lead's chord by walking the lead's track for whatever covers
-        // the anchor tick — it may start before lead_note_tick if the lead is
-        // sustaining a longer note.
-        var lead_chord = track_chord_covering(lead_note_track, lead_note_tick);
-        if (lead_chord && melody_part === "lead") {
-            // Lead is the melody — preserve its existing pitch (and ties), strip extras.
-            for (var i = lead_chord.notes.length - 1; i >= 0; i--) {
-                var n = lead_chord.notes[i];
-                if (n.pitch != lead_note) {
-                    while (n.tieForward) { removeElement(n.lastTiedNote); }
-                    while (n.tieBack)    { removeElement(n.firstTiedNote); }
-                    removeElement(n);
-                }
-            }
-            lead_chord.stemDirection = lead_stem;
+        // Resolve the melody voice's track and stem direction based on melody_part.
+        var melody_track;
+        var melody_stem;
+        if (melody_part === "tenor") {
+            melody_track = tenor_track;
+            melody_stem  = (tenor_track % 4 === 0) ? 1 : 2;
+        } else if (melody_part === "lead") {
+            melody_track = lead_note_track;
+            melody_stem  = lead_stem;
+        } else if (melody_part === "bari") {
+            melody_track = bari_track;
+            melody_stem  = 1;
+        } else {  // "bass"
+            melody_track = bass_track;
+            melody_stem  = 2;
         }
 
         // Refuse to write to tracks that don't exist (e.g. score has only one staff).
@@ -874,13 +879,27 @@ MuseScore {
             return;
         }
 
-        set_voice_pitch(tenor_track, lead_note_tick, tenor_pitch, 1, durNum, durDen);
-        if (melody_part !== "lead") {
-            // Lead is being rewritten — write its new pitch alongside the others.
-            set_voice_pitch(lead_note_track, lead_note_tick, lead_pitch, lead_stem, durNum, durDen);
+        // Preserve the melody voice — strip any extra notes from its chord (legacy
+        // single-staff harmony notes) but keep the user's pitch and any ties.
+        var melody_chord = track_chord_covering(melody_track, lead_note_tick);
+        if (melody_chord) {
+            for (var i = melody_chord.notes.length - 1; i >= 0; i--) {
+                var n = melody_chord.notes[i];
+                if (n.pitch != lead_note) {
+                    while (n.tieForward) { removeElement(n.lastTiedNote); }
+                    while (n.tieBack)    { removeElement(n.firstTiedNote); }
+                    removeElement(n);
+                }
+            }
+            melody_chord.stemDirection = melody_stem;
         }
-        set_voice_pitch(bari_track,  lead_note_tick, bari_pitch,  1, durNum, durDen);
-        set_voice_pitch(bass_track,  lead_note_tick, bass_pitch,  2, durNum, durDen);
+
+        // Write each non-melody voice. Lead is no longer special — it's rewritten
+        // by the chosen voicing whenever it's not the melody.
+        if (melody_part !== "tenor") set_voice_pitch(tenor_track,     lead_note_tick, tenor_pitch, 1,         durNum, durDen);
+        if (melody_part !== "lead")  set_voice_pitch(lead_note_track, lead_note_tick, lead_pitch,  lead_stem, durNum, durDen);
+        if (melody_part !== "bari")  set_voice_pitch(bari_track,      lead_note_tick, bari_pitch,  1,         durNum, durDen);
+        if (melody_part !== "bass")  set_voice_pitch(bass_track,      lead_note_tick, bass_pitch,  2,         durNum, durDen);
 
         // Re-select the note at the user's original click position. The original
         // element reference is invalidated when set_voice_pitch replaces the chord
@@ -889,8 +908,8 @@ MuseScore {
         if (anchor_chord && anchor_chord.type == Element.CHORD
                 && anchor_chord.notes && anchor_chord.notes.length > 0) {
             curScore.selection.select(anchor_chord.notes[0], false);
-        } else if (lead_chord && lead_chord.notes.length > 0) {
-            curScore.selection.select(lead_chord.notes[0], false);
+        } else if (melody_chord && melody_chord.notes.length > 0) {
+            curScore.selection.select(melody_chord.notes[0], false);
         }
     }
 
