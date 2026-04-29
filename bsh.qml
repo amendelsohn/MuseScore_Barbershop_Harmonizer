@@ -75,11 +75,85 @@ MuseScore {
     property var last_detected_tick   // tick of the last selection we ran auto-detect for
     property var last_detected_track  // track of the last selection we ran auto-detect for
 
+    // Which TTBB voice carries the melody (anchor for chord voicings). Lead by
+    // default; once the user toggles, the choice sticks for the session.
+    property string melody_part: "lead"
+    // Position in the 4-char voicing string corresponding to melody_part:
+    //   0 = bass, 1 = bari, 2 = lead, 3 = tenor.
+    property int melody_idx: melody_part === "tenor" ? 3
+                           : melody_part === "lead"  ? 2
+                           : melody_part === "bari"  ? 1
+                           : melody_part === "bass"  ? 0
+                           : 2
+
     ColumnLayout {
         id: columnLayout
         width: parent.width - 20
         height: parent.height - 20
         anchors.centerIn: parent
+
+        // Melody part picker — kept compact at the top since it changes rarely.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            Text {
+                text: "Melody:"
+                Layout.alignment: Qt.AlignVCenter
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "tenor" ? "lightsteelblue" : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                Text { anchors.centerIn: parent; text: "Tenor"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "tenor"; selection_changed(); }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "lead" ? "lightsteelblue" : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                Text { anchors.centerIn: parent; text: "Lead"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "lead"; selection_changed(); }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "bari" ? "lightsteelblue" : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                Text { anchors.centerIn: parent; text: "Bari"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "bari"; selection_changed(); }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "bass" ? "lightsteelblue" : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                Text { anchors.centerIn: parent; text: "Bass"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "bass"; selection_changed(); }
+                }
+            }
+        }
 
         Text {
             text: "Tonality : <b>" + get_note_name(tonality) + " major</b> (using " + (use_flats ? 'flats' : 'sharps') + ')'
@@ -261,11 +335,12 @@ MuseScore {
                 border.width: 1
                 radius: 4
 
-                // True when the voicing's lead-position function lines up with
-                // the actual lead pitch — i.e. picking it would keep the user
-                // in barbershop style.
+                // True when the voicing's melody-position function lines up with
+                // the actual anchor pitch — i.e. picking it would keep the user
+                // in barbershop style. The "melody position" depends on the
+                // melody_part toggle; defaults to position 2 (lead).
                 property bool is_in_style: (typeof chord !== 'undefined')
-                    && (root + chord.offsets[notes[2]]) % 12 == lead_note % 12
+                    && (root + chord.offsets[notes[melody_idx]]) % 12 == lead_note % 12
 
                 enabled: (typeof chord !== 'undefined')
                          && interaction_enabled
@@ -597,18 +672,34 @@ MuseScore {
         lead_note_tick    = clicked_tick;
         anchor_track      = clicked_track;
 
-        // Find the lead voice. If the clicked note is NOT the lead voice and a
-        // voice-2 (or fallback voice-1) chord covers `clicked_tick` higher up
-        // (e.g. the lead is sustaining a half/whole note from earlier), use
-        // that chord's pitch as the chord-viability anchor. Otherwise, the
-        // clicked note IS the lead.
+        // Find the lead voice's track for TTBB layout derivation. lead_note_track
+        // always points to the actual lead voice (used by ttbb_tracks), even
+        // when the melody is on a different part.
         var lead_info = find_lead_at(clicked_track, clicked_tick);
-        if (lead_info && lead_info.track !== clicked_track) {
-            lead_note       = lead_info.pitch;
-            lead_note_track = lead_info.track;
+        lead_note_track = lead_info ? lead_info.track : clicked_track;
+
+        // Determine the anchor pitch — the pitch of the melody voice at this
+        // tick. For melody=lead, use the sustained-lead pitch (lead_info or
+        // clicked element). For other melody parts, walk the corresponding
+        // TTBB track and pick the pitch of whatever chord covers the click tick.
+        if (melody_part === "lead") {
+            if (lead_info && lead_info.track !== clicked_track) {
+                lead_note = lead_info.pitch;
+            } else {
+                lead_note = el.pitch;
+            }
         } else {
-            lead_note       = el.pitch;
-            lead_note_track = clicked_track;
+            var tracks = ttbb_tracks(lead_note_track);
+            var melody_track = melody_part === "tenor" ? tracks.tenor
+                             : melody_part === "bari"  ? tracks.bari
+                             : melody_part === "bass"  ? tracks.bass
+                             : lead_note_track;
+            var melody_chord = track_chord_covering(melody_track, clicked_tick);
+            if (melody_chord && melody_chord.notes && melody_chord.notes.length > 0) {
+                lead_note = melody_chord.notes[0].pitch;
+            } else {
+                lead_note = el.pitch;
+            }
         }
 
         main_cursor.rewindToTick(clicked_tick);
@@ -634,27 +725,27 @@ MuseScore {
     function voicing_selected(index, spread) {
         var voicing = voicing_gv.model.get(index);
 
-        // Compute target pitches for tenor, bari, bass given the voicing pattern
-        // and the lead's pitch. Voicing string is "<bass><bari><lead><tenor>"
+        // Compute pitches for all four voices [bass, bari, lead, tenor] such
+        // that the melody voice (per the melody_part toggle) lands on the
+        // user's anchor pitch. Voicing string is "<bass><bari><lead><tenor>"
         // where each char is a chord function digit (1, 3, 5, 6, 7, 9).
-        var tenor_note = root + chord.offsets[voicing.notes[3]];
-        while (tenor_note <= lead_note) tenor_note += 12;
-
-        var bari_note = root + chord.offsets[voicing.notes[1]];
-        while (bari_note < lead_note) bari_note += 12;
-        if (bari_note >= tenor_note) bari_note -= 12;
-        if (spread) bari_note -= 12;
-
-        var bass_note = root + chord.offsets[voicing.notes[0]];
-        while (bass_note < bari_note && bass_note < lead_note) bass_note += 12;
-        bass_note -= 12;
+        var pitches    = compute_pitches(voicing, melody_idx, lead_note, spread);
+        var bass_note  = pitches[0];
+        var bari_note  = pitches[1];
+        var lead_pitch = pitches[2];
+        var tenor_note = pitches[3];
 
         ensureCmdStarted();
 
         if (split_staff_cb.checked) {
-            change_pitch_split_staff(tenor_note, bari_note, bass_note);
+            change_pitch_split_staff(tenor_note, lead_pitch, bari_note, bass_note);
         } else {
-            change_pitch(lead_note_track, [tenor_note, bari_note, bass_note]);
+            // Single-staff: stack the three non-melody voices into the anchor's chord.
+            var others = [];
+            for (var k = 0; k < 4; k++) {
+                if (k !== melody_idx) others.push(pitches[k]);
+            }
+            change_pitch(lead_note_track, others);
         }
 
         // Chord symbol goes at the anchor tick (where the chord change happens),
@@ -702,15 +793,23 @@ MuseScore {
     // Split-staff TTBB: place tenor on the lead's staff (opposite voice from lead),
     // and bari/bass on the staff directly below.
     //   Tenor: voice 1 of lead's staff  -> stem up
-    //   Lead : kept on its existing voice -> stem down
+    //   Lead : voice 2 of lead's staff (or whichever voice the lead lives on) -> stem down
     //   Bari : voice 1 of staff below   -> stem up
     //   Bass : voice 2 of staff below   -> stem down
-    function change_pitch_split_staff(tenor_pitch, bari_pitch, bass_pitch) {
+    //
+    // The lead's pitch is preserved when melody_part === "lead" (and ties on it
+    // are kept). For other melody parts, the lead voice is rewritten in place
+    // and the chosen melody voice keeps its pitch via the in-place modify path
+    // in set_voice_pitch.
+    function change_pitch_split_staff(tenor_pitch, lead_pitch, bari_pitch, bass_pitch) {
         var tracks = ttbb_tracks(lead_note_track);
         var lead_staff  = tracks.lead_staff;
         var tenor_track = tracks.tenor;
         var bari_track  = tracks.bari;
         var bass_track  = tracks.bass;
+        var lead_voice  = tracks.lead_voice;
+        // Stem direction enum: AUTO=0, UP=1, DOWN=2. Voice 2 stems down, voice 1 up.
+        var lead_stem   = (lead_voice === 0) ? 1 : 2;
 
         // Duration for the harmony comes from the CLICKED element. When the user
         // clicks tenor/bari/bass on a beat where the lead is sustaining, this
@@ -725,8 +824,8 @@ MuseScore {
         // the anchor tick — it may start before lead_note_tick if the lead is
         // sustaining a longer note.
         var lead_chord = track_chord_covering(lead_note_track, lead_note_tick);
-        if (lead_chord) {
-            // Strip any extra notes (legacy from single-staff harmonization).
+        if (lead_chord && melody_part === "lead") {
+            // Lead is the melody — preserve its existing pitch (and ties), strip extras.
             for (var i = lead_chord.notes.length - 1; i >= 0; i--) {
                 var n = lead_chord.notes[i];
                 if (n.pitch != lead_note) {
@@ -735,8 +834,7 @@ MuseScore {
                     removeElement(n);
                 }
             }
-            // Force lead stems down. (Direction enum: AUTO=0, UP=1, DOWN=2.)
-            lead_chord.stemDirection = 2;
+            lead_chord.stemDirection = lead_stem;
         }
 
         // Refuse to write to tracks that don't exist (e.g. score has only one staff).
@@ -749,6 +847,10 @@ MuseScore {
         }
 
         set_voice_pitch(tenor_track, lead_note_tick, tenor_pitch, 1, durNum, durDen);
+        if (melody_part !== "lead") {
+            // Lead is being rewritten — write its new pitch alongside the others.
+            set_voice_pitch(lead_note_track, lead_note_tick, lead_pitch, lead_stem, durNum, durDen);
+        }
         set_voice_pitch(bari_track,  lead_note_tick, bari_pitch,  1, durNum, durDen);
         set_voice_pitch(bass_track,  lead_note_tick, bass_pitch,  2, durNum, durDen);
 
@@ -762,6 +864,54 @@ MuseScore {
         } else if (lead_chord && lead_chord.notes.length > 0) {
             curScore.selection.select(lead_chord.notes[0], false);
         }
+    }
+
+    // Compute target pitches [bass, bari, lead, tenor] for a voicing, given the
+    // chord (root + type), the anchor index (0..3, which voice is the melody),
+    // the anchor pitch (the user's clicked / sustained pitch on that voice),
+    // and the spread flag.
+    //
+    // Approach: build a reference voicing using the original lead-anchored
+    // algorithm (which encodes traditional barbershop pitch ordering — bari above
+    // lead by default, bass dropped low for resonance, etc.), with the lead at a
+    // pitch close to anchor_pitch's octave but matching the voicing's prescribed
+    // lead pc. Then shift the whole chord by the octave delta needed to land the
+    // anchor voice on anchor_pitch. For in-style voicings this preserves the
+    // anchor exactly; for out-of-style picks the shift rounds to the nearest
+    // octave so the result stays in roughly the user's range.
+    function compute_pitches(voicing, anchor_idx, anchor_pitch, spread) {
+        var lead_pc  = ((root + chord.offsets[voicing.notes[2]]) % 12 + 12) % 12;
+        var ref_lead = lead_pc + 12 * Math.round((anchor_pitch - lead_pc) / 12);
+
+        var ref = compute_lead_anchored_pitches(voicing, ref_lead, spread);
+
+        var ref_pc    = ((ref[anchor_idx] % 12) + 12) % 12;
+        var anchor_pc = ((anchor_pitch    % 12) + 12) % 12;
+
+        var diff = (ref_pc === anchor_pc)
+                ? anchor_pitch - ref[anchor_idx]
+                : Math.round((anchor_pitch - ref[anchor_idx]) / 12) * 12;
+
+        return [ref[0] + diff, ref[1] + diff, ref[2] + diff, ref[3] + diff];
+    }
+
+    // Original lead-anchored pitch placement: tenor above lead, bari above lead
+    // (or below if spread / if it would otherwise collide with tenor), bass an
+    // octave below bari.
+    function compute_lead_anchored_pitches(voicing, lead_pitch, spread) {
+        var tenor_note = root + chord.offsets[voicing.notes[3]];
+        while (tenor_note <= lead_pitch) tenor_note += 12;
+
+        var bari_note = root + chord.offsets[voicing.notes[1]];
+        while (bari_note < lead_pitch) bari_note += 12;
+        if (bari_note >= tenor_note) bari_note -= 12;
+        if (spread) bari_note -= 12;
+
+        var bass_note = root + chord.offsets[voicing.notes[0]];
+        while (bass_note < bari_note && bass_note < lead_pitch) bass_note += 12;
+        bass_note -= 12;
+
+        return [bass_note, bari_note, lead_pitch, tenor_note];
     }
 
     // Place a single pitch on the given track at the given tick, guaranteeing
