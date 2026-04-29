@@ -956,10 +956,30 @@ MuseScore {
     // rather than corrupting an unrelated note.
     function set_voice_pitch(track, tick, pitch, stemDir, durNum, durDen) {
         try {
-            // Resolve what's actually starting at exactly (track, tick).
-            var atTick = track_element_at(track, tick);
+            var atTick   = track_element_at(track, tick);
+            var covering = track_chord_covering(track, tick);
 
-            // Case (a): chord at exact tick with matching duration → in-place modify.
+            // Case 0: existing chord (starting at tick OR sustained from earlier)
+            // already has the desired pitch — preserve it (and any ties), strip
+            // any extras carried over from legacy single-staff harmonization.
+            // This keeps held notes intact when the new voicing prescribes the
+            // same pitch the voice is already sounding.
+            if (covering && chord_has_pitch(covering, pitch)) {
+                for (var i0 = covering.notes.length - 1; i0 >= 0; i0--) {
+                    var n0 = covering.notes[i0];
+                    if (n0.pitch !== pitch) {
+                        while (n0.tieForward) { removeElement(n0.lastTiedNote); }
+                        while (n0.tieBack)    { removeElement(n0.firstTiedNote); }
+                        removeElement(n0);
+                    }
+                }
+                covering.stemDirection = stemDir;
+                return;
+            }
+
+            // Case (a): chord at exact tick with matching duration (and different
+            // pitch — Case 0 already caught the matching-pitch subcase) → in-place
+            // pitch modify, propagating the new pitch through any forward ties.
             if (atTick && atTick.type == Element.CHORD
                     && fractions_equal(atTick.duration.numerator, atTick.duration.denominator,
                                        durNum, durDen)) {
@@ -980,10 +1000,20 @@ MuseScore {
                 return;
             }
 
+            // Case (split): a chord covers `tick` (sustained from earlier, or
+            // starts at tick with a wrong duration) and has a different pitch.
+            // Split the held chord around the click tick: keep its original pitch
+            // up to `tick`, insert the new pitch at `tick` with the clicked
+            // duration, and continue with the original pitch after if any
+            // remainder is left. This guarantees all four voices conform to the
+            // selected voicing exactly at `tick`, while disturbing the held note
+            // only as much as necessary.
+            if (covering) {
+                split_and_insert_chord(track, tick, pitch, stemDir, durNum, durDen, covering);
+                return;
+            }
+
             // Case (b): rest covers tick. Split it and place a parallel note.
-            // We deliberately do NOT try to overwrite a chord that covers `tick`
-            // without starting there (or starts there with a wrong duration) —
-            // that path is more crash-prone and rare in practice. Bail out instead.
             var rest = track_rest_covering(track, tick);
 
             // Case (c): no rest found AND nothing starts at tick → the voice is
@@ -1126,6 +1156,101 @@ MuseScore {
         } catch (e) {
             console.log("set_voice_pitch: EXCEPTION track=" + track + " tick=" + tick
                         + " pitch=" + pitch + ": " + e);
+        }
+    }
+
+    // Split a held chord around `tick` and insert a new pitch at the click tick.
+    //   pre slice  [s,            tick)            : original pitch (preserved)
+    //   new slice  [tick,         tick + new_dur)  : new pitch with clicked duration
+    //   post slice [tick + new_dur, s + d)         : original pitch (continuation)
+    // Any of the slices can be empty (zero-length); we only write the non-empty ones.
+    // This is invoked by set_voice_pitch when an existing held chord crosses the
+    // click tick with a pitch that differs from the new voicing's prescription.
+    function split_and_insert_chord(track, tick, new_pitch, stemDir, durNum, durDen, covering) {
+        // Locate the covering chord by tick range. We don't compare element
+        // wrappers — QML's cursor can return a different wrapper object each
+        // time it visits the same element, so identity comparison is unreliable.
+        var c = curScore.newCursor();
+        c.track  = track;
+        c.filter = Segment.ChordRest;
+        c.rewind(0);
+        var s = -1;
+        var d = 0;
+        var orig_pitch = -1;
+        while (c.segment) {
+            var e = c.element;
+            if (e && e.type == Element.CHORD) {
+                var ct = c.tick;
+                var cd = e.duration.ticks;
+                if (ct <= tick && tick < ct + cd) {
+                    s = ct;
+                    d = cd;
+                    orig_pitch = e.notes[0].pitch;
+                    break;
+                }
+            }
+            if (c.tick > tick) break;
+            if (!c.next()) break;
+        }
+        if (s < 0) {
+            console.log("split_and_insert_chord: ABORT track=" + track + " tick=" + tick
+                        + " — couldn't locate covering chord's tick range");
+            return;
+        }
+
+        var pre_ticks  = tick - s;
+        var new_ticks  = Math.floor(durNum * 1920 / durDen);
+        var post_ticks = (s + d) - (tick + new_ticks);
+
+        main_cursor.track  = track;
+        main_cursor.filter = Segment.ChordRest;
+
+        // Step 1: truncate the covering chord to pre_ticks at orig_pitch
+        // (skip if pre_ticks == 0 — covering starts exactly at tick).
+        if (pre_ticks > 0) {
+            main_cursor.rewindToTick(s);
+            if (main_cursor.tick !== s) {
+                console.log("split_and_insert_chord: ABORT track=" + track + " tick=" + tick
+                            + " — couldn't reach covering start " + s
+                            + " (landed at " + main_cursor.tick + ")");
+                return;
+            }
+            var pre = ticks_to_frac(pre_ticks);
+            main_cursor.setDuration(pre[0], pre[1]);
+            main_cursor.addNote(orig_pitch, false);
+        }
+
+        // Step 2: write the new chord at tick with the clicked duration.
+        main_cursor.rewindToTick(tick);
+        if (main_cursor.tick !== tick) {
+            console.log("split_and_insert_chord: ABORT track=" + track + " tick=" + tick
+                        + " — couldn't reach target tick (landed at " + main_cursor.tick + ")");
+            return;
+        }
+        main_cursor.setDuration(durNum, durDen);
+        main_cursor.addNote(new_pitch, false);
+
+        var placed = track_element_at(track, tick);
+        if (!placed || placed.type != Element.CHORD || !chord_has_pitch(placed, new_pitch)) {
+            console.log("split_and_insert_chord: VERIFY FAILED track=" + track + " tick=" + tick
+                        + " — got=" + (placed ? placed.type : "null"));
+            return;
+        }
+        placed.stemDirection = stemDir;
+
+        // Step 3: continuation — fill the post-slice with the original pitch so
+        // the held note picks up where the new chord ends instead of leaving a rest.
+        if (post_ticks > 0) {
+            var post_tick = tick + new_ticks;
+            main_cursor.rewindToTick(post_tick);
+            if (main_cursor.tick !== post_tick) {
+                console.log("split_and_insert_chord: WARN track=" + track + " tick=" + tick
+                            + " — couldn't reach continuation tick " + post_tick);
+                return;
+            }
+            var post = ticks_to_frac(post_ticks);
+            main_cursor.setDuration(post[0], post[1]);
+            main_cursor.addNote(orig_pitch, false);
         }
     }
 
