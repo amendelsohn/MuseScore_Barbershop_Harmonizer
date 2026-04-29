@@ -83,6 +83,69 @@ MuseScore {
         height: parent.height - 20
         anchors.centerIn: parent
 
+        // Melody part picker — kept compact at the top since it changes rarely.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            StyledTextLabel {
+                text: "Melody:"
+                Layout.alignment: Qt.AlignVCenter
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "tenor" ? ui.theme.accentColor : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                StyledTextLabel { anchors.centerIn: parent; text: "Tenor"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "tenor"; selection_changed(); }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "lead" ? ui.theme.accentColor : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                StyledTextLabel { anchors.centerIn: parent; text: "Lead"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "lead"; selection_changed(); }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "bari" ? ui.theme.accentColor : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                StyledTextLabel { anchors.centerIn: parent; text: "Bari"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "bari"; selection_changed(); }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 20
+                color: melody_part === "bass" ? ui.theme.accentColor : "transparent"
+                border.color: "lightgray"
+                border.width: 1
+                radius: 3
+                StyledTextLabel { anchors.centerIn: parent; text: "Bass"; font.pixelSize: 11 }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { melody_part = "bass"; selection_changed(); }
+                }
+            }
+        }
+
         StyledTextLabel {
             text: "Tonality : <b>" + get_note_name(tonality) + " major</b> (using " + (use_flats ? 'flats' : 'sharps') + ')'
         }
@@ -185,68 +248,6 @@ MuseScore {
             highlight: Rectangle {
                 color: ui.theme.accentColor
                 radius: 4
-            }
-        }
-
-        StyledTextLabel {
-            text: "Melody part :"
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 4
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 25
-                color: melody_part === "tenor" ? ui.theme.accentColor : "transparent"
-                border.color: "lightgray"
-                border.width: 1
-                radius: 4
-                StyledTextLabel { anchors.centerIn: parent; text: "Tenor" }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: { melody_part = "tenor"; selection_changed(); }
-                }
-            }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 25
-                color: melody_part === "lead" ? ui.theme.accentColor : "transparent"
-                border.color: "lightgray"
-                border.width: 1
-                radius: 4
-                StyledTextLabel { anchors.centerIn: parent; text: "Lead" }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: { melody_part = "lead"; selection_changed(); }
-                }
-            }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 25
-                color: melody_part === "bari" ? ui.theme.accentColor : "transparent"
-                border.color: "lightgray"
-                border.width: 1
-                radius: 4
-                StyledTextLabel { anchors.centerIn: parent; text: "Bari" }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: { melody_part = "bari"; selection_changed(); }
-                }
-            }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 25
-                color: melody_part === "bass" ? ui.theme.accentColor : "transparent"
-                border.color: "lightgray"
-                border.width: 1
-                radius: 4
-                StyledTextLabel { anchors.centerIn: parent; text: "Bass" }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: { melody_part = "bass"; selection_changed(); }
-                }
             }
         }
 
