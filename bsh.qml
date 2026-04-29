@@ -1195,25 +1195,37 @@ MuseScore {
     // This is invoked by set_voice_pitch when an existing held chord crosses the
     // click tick with a pitch that differs from the new voicing's prescription.
     function split_and_insert_chord(track, tick, new_pitch, stemDir, durNum, durDen, covering) {
-        // Locate the covering chord's start tick.
+        // Locate the covering chord by tick range. We don't compare element
+        // wrappers — QML's cursor can return a different wrapper object each
+        // time it visits the same element, so identity comparison is unreliable.
         var c = curScore.newCursor();
         c.track  = track;
         c.filter = Segment.ChordRest;
         c.rewind(0);
         var s = -1;
+        var d = 0;
+        var orig_pitch = -1;
         while (c.segment) {
-            if (c.element === covering) { s = c.tick; break; }
+            var e = c.element;
+            if (e && e.type == Element.CHORD) {
+                var ct = c.tick;
+                var cd = e.duration.ticks;
+                if (ct <= tick && tick < ct + cd) {
+                    s = ct;
+                    d = cd;
+                    orig_pitch = e.notes[0].pitch;
+                    break;
+                }
+            }
             if (c.tick > tick) break;
             if (!c.next()) break;
         }
         if (s < 0) {
             console.log("split_and_insert_chord: ABORT track=" + track + " tick=" + tick
-                        + " — couldn't locate covering chord's start tick");
+                        + " — couldn't locate covering chord's tick range");
             return;
         }
 
-        var d          = covering.duration.ticks;
-        var orig_pitch = covering.notes[0].pitch;
         var pre_ticks  = tick - s;
         var new_ticks  = Math.floor(durNum * 1920 / durDen);
         var post_ticks = (s + d) - (tick + new_ticks);
